@@ -1,34 +1,80 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml;
 
 namespace Engine
 {
     public class Player : LivingCreature
     {
-        public int Gold { get; set; }
-        public int ExperiencePoints { get; private set; }
+        private int _gold;
+        private int _experiencePoints;
+        private Location _currentLocation;
+
+        public event EventHandler<MessageEventArgs> OnMessage;
+         
+        public int Gold
+        {
+            get { return _gold; }
+            set
+            {
+                _gold = value;
+                OnPropertyChanged("Gold");
+            }
+        }
+
+        public int ExperiencePoints
+        {
+            get { return _experiencePoints; }
+            private set
+            {
+                _experiencePoints = value;
+                OnPropertyChanged("ExperiencePoints");
+                OnPropertyChanged("Level");
+            }
+        }
+
         public int Level 
         {
             get { return ((ExperiencePoints / 100) + 1); }
         }
-        public Location CurrentLocation { get; set; }
+
+        public Location CurrentLocation
+        {
+            get { return _currentLocation; }
+            set
+            {
+                _currentLocation = value;
+                OnPropertyChanged("CurrentLocation");
+            }
+        }
 
         public Weapon CurrentWeapon { get; set; }
 
-        public List<InventoryItem> Inventory { get; set; }
-        public List<PlayerQuest> Quests { get; set; }
+        public BindingList<InventoryItem> Inventory { get; set; }
+
+        public List<Weapon> Weapons
+        {
+            get { return Inventory.Where(x => x.Details is Weapon).Select(x => x.Details as Weapon).ToList(); }
+        }
+
+        public List<HealingPotion> Potions
+        {
+            get { return Inventory.Where(x => x.Details is HealingPotion).Select(x => x.Details as HealingPotion).ToList(); }
+        }
+
+        public BindingList<PlayerQuest> Quests { get; set; }
+
+        private Monster CurrentMonster { get; set; }
 
         private Player(int currentHitPoints, int maximumHitPoints, int gold, int experiencePoints) : base(currentHitPoints, maximumHitPoints)
         {
             Gold = gold;
             ExperiencePoints = experiencePoints;
 
-            Inventory = new List<InventoryItem>();
-            Quests = new List<PlayerQuest>();
+            Inventory = new BindingList<InventoryItem>();
+            Quests = new BindingList<PlayerQuest>();
         }
 
         public static Player CreateDefaultPlayer()
@@ -38,12 +84,6 @@ namespace Engine
             player.CurrentLocation = World.LocationByID(World.LOCATION_ID_HOME);
 
             return player;
-        }
-
-        public void AddExperiencePoints(int experiencePointsToAdd )
-        {
-            ExperiencePoints += experiencePointsToAdd;
-            MaximumHitPoints = (Level * 10);
         }
 
         public static Player CreatePlayerFromXmlString(string xmlPlayerData)
@@ -97,95 +137,173 @@ namespace Engine
             catch
             {
                 // If there was an error with the XML data, return a default player object
-                return Player.CreateDefaultPlayer();
+                return CreateDefaultPlayer();
             }
         }
 
-        public bool HasRequiredItemToEnterThisLocation(Location location)
+        public static Player CreatePlayerFromDatabase(int currentHitPoints, int maximumHitPoints, int gold, int experiencePoints, int currentLocationID)
         {
-            if(location.ItemRequiredToEnter == null)
+            Player player = new Player(currentHitPoints, maximumHitPoints, gold, experiencePoints);
+
+            player.MoveTo(World.LocationByID(currentLocationID));
+
+            return player;
+        }
+
+        public void MoveTo(Location location)
+        {
+            if(PlayerDoesNotHaveTheRequiredItemToEnter(location))
             {
-                // There is no required item for this location, so return "true"
-                return true;
+                RaiseMessage("You must have a " + location.ItemRequiredToEnter.Name + " to enter this location.");
+                return;
             }
 
-            // See if the player has the required item in their inventory
-            return Inventory.Exists(ii => ii.Details.ID == location.ItemRequiredToEnter.ID);
-        }
+            // The player can enter this location
+            CurrentLocation = location;
 
-        public bool HasThisQuest(Quest quest)
-        {
-            return Quests.Exists(pq => pq.Details.ID == quest.ID);
-        }
+            CompletelyHeal();
 
-        public bool CompletedThisQuest(Quest quest)
-        {
-            foreach(PlayerQuest playerQuest in Quests)
+            if(location.HasAQuest)
             {
-                if(playerQuest.Details.ID == quest.ID)
+                if(PlayerDoesNotHaveThisQuest(location.QuestAvailableHere))
                 {
-                    return playerQuest.IsCompleted;
+                    GiveQuestToPlayer(location.QuestAvailableHere);
+                }
+                else
+                {
+                    if(PlayerHasNotCompleted(location.QuestAvailableHere) &&
+                       PlayerHasAllQuestCompletionItemsFor(location.QuestAvailableHere))
+                    {
+                        GivePlayerQuestRewards(location.QuestAvailableHere);
+                    }
                 }
             }
 
-            return false;
+            SetTheCurrentMonsterForTheCurrentLocation(location);
         }
 
-        public bool HasAllQuestCompletionItems(Quest quest)
+        public void MoveNorth()
         {
-            // See if the player has all the items needed to complete the quest here
-            foreach(QuestCompletionItem qci in quest.QuestCompletionItems)
+            if(CurrentLocation.LocationToNorth != null)
             {
-                // Check each item in the player's inventory, to see if they have it, and enough of it
-                if(!Inventory.Exists(ii => ii.Details.ID == qci.Details.ID && ii.Quantity >= qci.Quantity))
-                {
-                    return false;
-                }
-            }
-
-            // If we got here, then the player must have all the required items, and enough of them, to complete the quest.
-            return true;
-        }
-
-        public void RemoveQuestCompletionItems(Quest quest)
-        {
-            foreach(QuestCompletionItem qci in quest.QuestCompletionItems)
-            {
-                InventoryItem item = Inventory.SingleOrDefault(ii => ii.Details.ID == qci.Details.ID);
-
-                if(item != null)
-                {
-                    // Subtract the quantity from the player's inventory that was needed to complete the quest
-                    item.Quantity -= qci.Quantity;
-                    break;
-                }
+                MoveTo(CurrentLocation.LocationToNorth);
             }
         }
 
-        public void AddItemToInventory(Item itemToAdd)
+        public void MoveEast()
         {
-            InventoryItem item = Inventory.SingleOrDefault(ii => ii.Details.ID == itemToAdd.ID);
-
-            if(item == null)
+            if(CurrentLocation.LocationToEast != null)
             {
-                // They didn't have the item, so add it to their inventory, with a quantity of 1
-                Inventory.Add(new InventoryItem(itemToAdd, 1));
+                MoveTo(CurrentLocation.LocationToEast);
+            }
+        }
+
+        public void MoveSouth()
+        {
+            if(CurrentLocation.LocationToSouth != null)
+            {
+                MoveTo(CurrentLocation.LocationToSouth);
+            }
+        }
+
+        public void MoveWest()
+        {
+            if(CurrentLocation.LocationToWest != null)
+            {
+                MoveTo(CurrentLocation.LocationToWest);
+            }
+        }
+
+        public void UseWeapon(Weapon weapon)
+        {
+            int damage = RandomNumberGenerator.NumberBetween(weapon.MinimumDamage, weapon.MaximumDamage);
+
+            if(damage == 0)
+            {
+                RaiseMessage("You missed the " + CurrentMonster.Name);
             }
             else
             {
-                // They have the item in their inventory, so increase the quantity by one
-                item.Quantity++;
+                CurrentMonster.CurrentHitPoints -= damage;
+                RaiseMessage("You hit the " + CurrentMonster.Name + " for " + damage + " points.");
+            }
+
+            if(CurrentMonster.IsDead)
+            {
+                LootTheCurrentMonster();
+
+                // "Move" to the current location, to refresh the current monster
+                MoveTo(CurrentLocation);
+            }
+            else
+            {
+                LetTheMonsterAttack();
             }
         }
 
-        public void MarkQuestCompleted(Quest quest)
+        private void LootTheCurrentMonster()
         {
-            // Find the quest in the player's quest list
-            PlayerQuest playerQuest = Quests.SingleOrDefault(pq => pq.Details.ID == quest.ID);
+            RaiseMessage("");
+            RaiseMessage("You defeated the " + CurrentMonster.Name);
+            RaiseMessage("You receive " + CurrentMonster.RewardExperiencePoints + " experience points");
+            RaiseMessage("You receive " + CurrentMonster.RewardGold + " gold");
 
-            if(playerQuest != null)
+            AddExperiencePoints(CurrentMonster.RewardExperiencePoints);
+            Gold += CurrentMonster.RewardGold;
+
+            // Give monster's loot items to the player
+            foreach(InventoryItem inventoryItem in CurrentMonster.LootItems)
             {
-                playerQuest.IsCompleted = true;
+                AddItemToInventory(inventoryItem.Details);
+
+                RaiseMessage(string.Format("You loot {0} {1}", inventoryItem.Quantity, inventoryItem.Description));
+            }
+
+            RaiseMessage("");
+        }
+
+        public void UsePotion(HealingPotion potion)
+        {
+            RaiseMessage("You drink a " + potion.Name);
+
+            HealPlayer(potion.AmountToHeal);
+
+            RemoveItemFromInventory(potion);
+
+            // The player used their turn to drink the potion, so let the monster attack now
+            LetTheMonsterAttack();
+        }
+
+        public void AddItemToInventory(Item itemToAdd, int quantity = 1)
+        {
+            InventoryItem existingItemInInventory = Inventory.SingleOrDefault(ii => ii.Details.ID == itemToAdd.ID);
+
+            if(existingItemInInventory == null)
+            {
+                Inventory.Add(new InventoryItem(itemToAdd, quantity));
+            }
+            else
+            {
+                existingItemInInventory.Quantity += quantity;
+            }
+
+            RaiseInventoryChangedEvent(itemToAdd);
+        }
+
+        public void RemoveItemFromInventory(Item itemToRemove, int quantity = 1)
+        {
+            InventoryItem item = Inventory.SingleOrDefault(ii => ii.Details.ID == itemToRemove.ID && ii.Quantity >= quantity);
+
+            if(item != null)
+            {
+                item.Quantity -= quantity;
+
+                if(item.Quantity == 0)
+                {
+                    Inventory.Remove(item);
+                }
+
+                RaiseInventoryChangedEvent(itemToRemove);
             }
         }
 
@@ -202,31 +320,15 @@ namespace Engine
             player.AppendChild(stats);
 
             // Create the child nodes for the "Stats" node
-            XmlNode currentHitPoints = playerData.CreateElement("CurrentHitPoints");
-            currentHitPoints.AppendChild(playerData.CreateTextNode(this.CurrentHitPoints.ToString()));
-            stats.AppendChild(currentHitPoints);
-
-            XmlNode maximumHitPoints = playerData.CreateElement("MaximumHitPoints");
-            maximumHitPoints.AppendChild(playerData.CreateTextNode(this.MaximumHitPoints.ToString()));
-            stats.AppendChild(maximumHitPoints);
-
-            XmlNode gold = playerData.CreateElement("Gold");
-            gold.AppendChild(playerData.CreateTextNode(this.Gold.ToString()));
-            stats.AppendChild(gold);
-
-            XmlNode experiencePoints = playerData.CreateElement("ExperiencePoints");
-            experiencePoints.AppendChild(playerData.CreateTextNode(this.ExperiencePoints.ToString()));
-            stats.AppendChild(experiencePoints);
-
-            XmlNode currentLocation = playerData.CreateElement("CurrentLocation");
-            currentLocation.AppendChild(playerData.CreateTextNode(this.CurrentLocation.ID.ToString()));
-            stats.AppendChild(currentLocation);
+            CreateNewChildXmlNode(playerData, stats, "CurrentHitPoints", CurrentHitPoints);
+            CreateNewChildXmlNode(playerData, stats, "MaximumHitPoints", MaximumHitPoints);
+            CreateNewChildXmlNode(playerData, stats, "Gold", Gold);
+            CreateNewChildXmlNode(playerData, stats, "ExperiencePoints", ExperiencePoints);
+            CreateNewChildXmlNode(playerData, stats, "CurrentLocation", CurrentLocation.ID);
 
             if(CurrentWeapon != null)
             {
-                XmlNode currentWeapon = playerData.CreateElement("CurrentWeapon");
-                currentWeapon.AppendChild(playerData.CreateTextNode(this.CurrentWeapon.ID.ToString()));
-                stats.AppendChild(currentWeapon);
+                CreateNewChildXmlNode(playerData, stats, "CurrentWeapon", CurrentWeapon.ID);
             }
 
             // Create the "InventoryItems" child node to hold each InventoryItem node
@@ -234,17 +336,12 @@ namespace Engine
             player.AppendChild(inventoryItems);
 
             // Create an "InventoryItem" node for each item in the player's inventory
-            foreach(InventoryItem item in this.Inventory)
+            foreach(InventoryItem item in Inventory)
             {
                 XmlNode inventoryItem = playerData.CreateElement("InventoryItem");
 
-                XmlAttribute idAttribute = playerData.CreateAttribute("ID");
-                idAttribute.Value = item.Details.ID.ToString();
-                inventoryItem.Attributes.Append(idAttribute);
-
-                XmlAttribute quantityAttribute = playerData.CreateAttribute("Quantity");
-                quantityAttribute.Value = item.Quantity.ToString();
-                inventoryItem.Attributes.Append(quantityAttribute);
+                AddXmlAttributeToNode(playerData, inventoryItem, "ID", item.Details.ID);
+                AddXmlAttributeToNode(playerData, inventoryItem, "Quantity", item.Quantity);
 
                 inventoryItems.AppendChild(inventoryItem);
             }
@@ -254,22 +351,200 @@ namespace Engine
             player.AppendChild(playerQuests);
 
             // Create a "PlayerQuest" node for each quest the player has acquired
-            foreach(PlayerQuest quest in this.Quests)
+            foreach(PlayerQuest quest in Quests)
             {
                 XmlNode playerQuest = playerData.CreateElement("PlayerQuest");
 
-                XmlAttribute idAttribute = playerData.CreateAttribute("ID");
-                idAttribute.Value = quest.Details.ID.ToString();
-                playerQuest.Attributes.Append(idAttribute);
-
-                XmlAttribute isCompletedAttribute = playerData.CreateAttribute("IsCompleted");
-                isCompletedAttribute.Value = quest.IsCompleted.ToString();
-                playerQuest.Attributes.Append(isCompletedAttribute);
+                AddXmlAttributeToNode(playerData, playerQuest, "ID", quest.Details.ID);
+                AddXmlAttributeToNode(playerData, playerQuest, "IsCompleted", quest.IsCompleted);
 
                 playerQuests.AppendChild(playerQuest);
             }
 
             return playerData.InnerXml; // The XML document, as a string, so we can save the data to disk
+        }
+
+        private bool HasRequiredItemToEnterThisLocation(Location location)
+        {
+            if(location.DoesNotHaveAnItemRequiredToEnter)
+            {
+                return true;
+            }
+
+            // See if the player has the required item in their inventory
+            return Inventory.Any(ii => ii.Details.ID == location.ItemRequiredToEnter.ID);
+        }
+
+        private void SetTheCurrentMonsterForTheCurrentLocation(Location location)
+        {
+            // Populate the current monster with this location's monster (or null, if there is no monster here)
+            CurrentMonster = location.NewInstanceOfMonsterLivingHere();
+
+            if(CurrentMonster != null)
+            {
+                RaiseMessage("You see a " + location.MonsterLivingHere.Name);
+            }
+        }
+
+        private bool PlayerDoesNotHaveTheRequiredItemToEnter(Location location)
+        {
+            return !HasRequiredItemToEnterThisLocation(location);
+        }
+
+        private bool PlayerDoesNotHaveThisQuest(Quest quest)
+        {
+            return Quests.All(pq => pq.Details.ID != quest.ID);
+        }
+
+        private bool PlayerHasNotCompleted(Quest quest)
+        {
+            return Quests.Any(pq => pq.Details.ID == quest.ID && !pq.IsCompleted);
+        }
+
+        private void GiveQuestToPlayer(Quest quest)
+        {
+            RaiseMessage("You receive the " + quest.Name + " quest.");
+            RaiseMessage(quest.Description);
+            RaiseMessage("To complete it, return with:");
+
+            foreach(QuestCompletionItem qci in quest.QuestCompletionItems)
+            {
+                RaiseMessage(string.Format("{0} {1}", qci.Quantity,
+                    qci.Quantity == 1 ? qci.Details.Name : qci.Details.NamePlural));
+            }
+
+            RaiseMessage("");
+
+            Quests.Add(new PlayerQuest(quest));
+        }
+
+        private bool PlayerHasAllQuestCompletionItemsFor(Quest quest)
+        {
+            // See if the player has all the items needed to complete the quest here
+            foreach(QuestCompletionItem qci in quest.QuestCompletionItems)
+            {
+                // Check each item in the player's inventory, to see if they have it, and enough of it
+                if(!Inventory.Any(ii => ii.Details.ID == qci.Details.ID && ii.Quantity >= qci.Quantity))
+                {
+                    return false;
+                }
+            }
+
+            // If we got here, then the player must have all the required items, and enough of them, to complete the quest.
+            return true;
+        }
+
+        private void RemoveQuestCompletionItems(Quest quest)
+        {
+            foreach(QuestCompletionItem qci in quest.QuestCompletionItems)
+            {
+                InventoryItem item = Inventory.SingleOrDefault(ii => ii.Details.ID == qci.Details.ID);
+
+                if(item != null)
+                {
+                    RemoveItemFromInventory(item.Details, qci.Quantity);
+                }
+            }
+        }
+
+        private void AddExperiencePoints(int experiencePointsToAdd)
+        {
+            ExperiencePoints += experiencePointsToAdd;
+            MaximumHitPoints = (Level * 10);
+        }
+
+        private void GivePlayerQuestRewards(Quest quest)
+        {
+            RaiseMessage("");
+            RaiseMessage("You complete the '" + quest.Name + "' quest.");
+            RaiseMessage("You receive: ");
+            RaiseMessage(quest.RewardExperiencePoints + " experience points");
+            RaiseMessage(quest.RewardGold + " gold");
+            RaiseMessage(quest.RewardItem.Name, true);
+
+            AddExperiencePoints(quest.RewardExperiencePoints);
+            Gold += quest.RewardGold;
+
+            RemoveQuestCompletionItems(quest);
+            AddItemToInventory(quest.RewardItem);
+
+            MarkPlayerQuestCompleted(quest);
+        }
+
+        private void MarkPlayerQuestCompleted(Quest quest)
+        {
+            PlayerQuest playerQuest = Quests.SingleOrDefault(pq => pq.Details.ID == quest.ID);
+
+            if(playerQuest != null)
+            {
+                playerQuest.IsCompleted = true;
+            }
+        }
+
+        private void LetTheMonsterAttack()
+        {
+            int damageToPlayer = RandomNumberGenerator.NumberBetween(0, CurrentMonster.MaximumDamage);
+
+            RaiseMessage("The " + CurrentMonster.Name + " did " + damageToPlayer + " points of damage.");
+
+            CurrentHitPoints -= damageToPlayer;
+
+            if(IsDead)
+            {
+                RaiseMessage("The " + CurrentMonster.Name + " killed you.");
+
+                MoveHome();
+            }
+        }
+
+        private void HealPlayer(int hitPointsToHeal)
+        {
+            CurrentHitPoints = Math.Min(CurrentHitPoints + hitPointsToHeal, MaximumHitPoints);
+        }
+
+        private void CompletelyHeal()
+        {
+            CurrentHitPoints = MaximumHitPoints;
+        }
+
+        private void MoveHome()
+        {
+            MoveTo(World.LocationByID(World.LOCATION_ID_HOME));
+        }
+
+        private void CreateNewChildXmlNode(XmlDocument document, XmlNode parentNode, string elementName, object value)
+        {
+            XmlNode node = document.CreateElement(elementName);
+            node.AppendChild(document.CreateTextNode(value.ToString()));
+            parentNode.AppendChild(node);
+        }
+
+        private void AddXmlAttributeToNode(XmlDocument document, XmlNode node, string attributeName, object value)
+        {
+            XmlAttribute attribute = document.CreateAttribute(attributeName);
+            attribute.Value = value.ToString();
+            node.Attributes.Append(attribute);
+        }
+
+        private void RaiseInventoryChangedEvent(Item item)
+        {
+            if(item is Weapon)
+            {
+                OnPropertyChanged("Weapons");
+            }
+
+            if(item is HealingPotion)
+            {
+                OnPropertyChanged("Potions");
+            }
+        }
+
+        private void RaiseMessage(string message, bool addExtraNewLine = false)
+        {
+            if(OnMessage != null)
+            {
+                OnMessage(this, new MessageEventArgs(message, addExtraNewLine));
+            }
         }
     }
 }

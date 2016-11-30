@@ -226,7 +226,7 @@ namespace SuperAdventureConsole
 
         private static void AttackMonster()
         {
-            if(_player.CurrentLocation.MonsterLivingHere == null)
+            if(!_player.CurrentLocation.HasAMonster)
             {
                 Console.WriteLine("There is nothing here to attack");
             }

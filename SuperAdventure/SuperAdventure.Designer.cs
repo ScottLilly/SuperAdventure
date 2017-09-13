@@ -50,6 +50,7 @@
             this.dgvInventory = new System.Windows.Forms.DataGridView();
             this.dgvQuests = new System.Windows.Forms.DataGridView();
             this.btnTrade = new System.Windows.Forms.Button();
+            this.btnMap = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)(this.dgvInventory)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.dgvQuests)).BeginInit();
             this.SuspendLayout();
@@ -169,7 +170,7 @@
             // 
             // btnNorth
             // 
-            this.btnNorth.Location = new System.Drawing.Point(493, 433);
+            this.btnNorth.Location = new System.Drawing.Point(493, 429);
             this.btnNorth.Name = "btnNorth";
             this.btnNorth.Size = new System.Drawing.Size(75, 23);
             this.btnNorth.TabIndex = 13;
@@ -189,7 +190,7 @@
             // 
             // btnSouth
             // 
-            this.btnSouth.Location = new System.Drawing.Point(493, 487);
+            this.btnSouth.Location = new System.Drawing.Point(494, 487);
             this.btnSouth.Name = "btnSouth";
             this.btnSouth.Size = new System.Drawing.Size(75, 23);
             this.btnSouth.TabIndex = 15;
@@ -263,11 +264,22 @@
             this.btnTrade.UseVisualStyleBackColor = true;
             this.btnTrade.Click += new System.EventHandler(this.btnTrade_Click);
             // 
+            // btnMap
+            // 
+            this.btnMap.Location = new System.Drawing.Point(494, 457);
+            this.btnMap.Name = "btnMap";
+            this.btnMap.Size = new System.Drawing.Size(75, 23);
+            this.btnMap.TabIndex = 22;
+            this.btnMap.Text = "Map";
+            this.btnMap.UseVisualStyleBackColor = true;
+            this.btnMap.Click += new System.EventHandler(this.btnMap_Click);
+            // 
             // SuperAdventure
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(719, 651);
+            this.Controls.Add(this.btnMap);
             this.Controls.Add(this.btnTrade);
             this.Controls.Add(this.dgvQuests);
             this.Controls.Add(this.dgvInventory);
@@ -324,6 +336,7 @@
         private System.Windows.Forms.DataGridView dgvInventory;
         private System.Windows.Forms.DataGridView dgvQuests;
         private System.Windows.Forms.Button btnTrade;
+        private System.Windows.Forms.Button btnMap;
     }
 }
 

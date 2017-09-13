@@ -215,3 +215,9 @@ $RECYCLE.BIN/
 
 # Subversion
 *.svn
+NDependOut/2017_01/30_20_26/InfoWarnings.xml
+NDependOut/2017_02/02_19_02/InfoWarnings.xml
+
+#NDepend
+NDepend*
+*.ndproj

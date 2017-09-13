@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows.Forms;
 using System.IO;
-
 using Engine;
 
 namespace SuperAdventure
@@ -31,6 +30,8 @@ namespace SuperAdventure
                     _player = Player.CreateDefaultPlayer();
                 }
             }
+
+            _player.AddItemToInventory(World.ItemByID(World.ITEM_ID_CLUB));
 
             lblHitPoints.DataBindings.Add("Text", _player, "CurrentHitPoints");
             lblGold.DataBindings.Add("Text", _player, "Gold");
@@ -111,11 +112,19 @@ namespace SuperAdventure
 
         private void PlayerOnPropertyChanged(object sender, PropertyChangedEventArgs propertyChangedEventArgs)
         {
-            if(propertyChangedEventArgs.PropertyName == "Weapons")
+            if (propertyChangedEventArgs.PropertyName == "Weapons")
             {
+                Weapon previouslySelectedWeapon = _player.CurrentWeapon;
+
                 cboWeapons.DataSource = _player.Weapons;
 
-                if(!_player.Weapons.Any())
+                if (previouslySelectedWeapon != null && 
+                    _player.Weapons.Exists(w => w.ID == previouslySelectedWeapon.ID))
+                {
+                    cboWeapons.SelectedItem = previouslySelectedWeapon;
+                }
+
+                if (!_player.Weapons.Any())
                 {
                     cboWeapons.Visible = false;
                     btnUseWeapon.Visible = false;
@@ -217,6 +226,13 @@ namespace SuperAdventure
             TradingScreen tradingScreen = new TradingScreen(_player);
             tradingScreen.StartPosition = FormStartPosition.CenterParent;
             tradingScreen.ShowDialog(this);
+        }
+
+        private void btnMap_Click(object sender, EventArgs e)
+        {
+            WorldMap mapScreen = new WorldMap(_player);
+            mapScreen.StartPosition = FormStartPosition.CenterParent;
+            mapScreen.ShowDialog(this);
         }
     }
 }

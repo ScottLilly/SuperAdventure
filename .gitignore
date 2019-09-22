@@ -221,3 +221,7 @@ NDependOut/2017_02/02_19_02/InfoWarnings.xml
 #NDepend
 NDepend*
 *.ndproj
+*.lock
+*.ide
+*.ide-shm
+*.ide-wal
